@@ -2,7 +2,6 @@
 # implemented in pytorch
 
 from time import time
-from jax._src.tree_util import H
 import torchvision
 import torch
 from torch.nn import functional as fnn
@@ -14,7 +13,13 @@ from diffusers import DDPMPipeline
 from diffusers.schedulers.scheduling_ddpm import DDPMScheduler
 from diffusers.models.unets import UNet2DModel
 from diffusers.optimization import get_cosine_schedule_with_warmup
-from huggingface_hub import notebook_login, get_full_repo_name, HfApi, create_repo
+from huggingface_hub import (
+    notebook_login,
+    get_full_repo_name,
+    HfApi,
+    create_repo,
+    ModelCard,
+)
 
 import numpy as np
 import wandb
@@ -110,7 +115,7 @@ optimizer = torch.optim.AdamW(unet_model.parameters(), lr=4e-4)
 losses = []
 epochs = 30
 wandb.login()
-wandb.run(project="tiny_diffuse", name="minidiffuse_sky1_64x64")
+wandb.init(project="tiny_diffuse", name="minidiffuse_sky1_64x64")
 # lr_scheduler = get_cosine_schedule_with_warmup()
 
 for epoch in tqdm(range(epochs)):
@@ -143,6 +148,11 @@ for epoch in tqdm(range(epochs)):
     epoch_loss = sum(losses[-len(train_dataloader) :]) / len(train_dataloader)
     print(f"epoch @ {epoch + 1} => loss: {epoch_loss}")
 
+fig, axs = plt.subplots(1, 2, figsize=(12, 4))
+axs[0].plot(losses)
+axs[1].plot(np.log(losses))
+plt.show()
+
 try:
     torch.save(unet_model.state_dict(), "mini_diffuse.pt")
 except Exception as e:
@@ -171,8 +181,8 @@ model_id = get_full_repo_name(model_name)
 notebook_login()
 create_repo(model_id)
 
-hf_api = HfApi()
 
+hf_api = HfApi()
 hf_api.upload_folder(
     folder_path="sky_diff/scheduler", path_in_repo="", repo_id=model_id
 )
@@ -197,13 +207,14 @@ tags:
 ---
 
 This model is a diffusion model for unconditional image generation of clouds, skies, etc
-
-## Usage
-
-```python
+## Usage```python
 from diffusers import DDPMPipeline
 
 pipeline = DDPMPipeline.from_pretrained('{model_id}')
 image = pipeline().images[0]
 image
 """
+
+
+card = ModelCard(content)
+card.push_to_hub(model_id)
