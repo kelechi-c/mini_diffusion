@@ -2,6 +2,7 @@
 # implemented in pytorch
 
 from time import time
+from jax._src.tree_util import H
 import torchvision
 import torch
 from torch.nn import functional as fnn
@@ -13,7 +14,7 @@ from diffusers import DDPMPipeline
 from diffusers.schedulers.scheduling_ddpm import DDPMScheduler
 from diffusers.models.unets import UNet2DModel
 from diffusers.optimization import get_cosine_schedule_with_warmup
-from huggingface_hub import notebook_login, get_full_repo_name, HfApi
+from huggingface_hub import notebook_login, get_full_repo_name, HfApi, create_repo
 
 import numpy as np
 import wandb
@@ -158,4 +159,51 @@ for k, c in tqdm(enumerate(noise_scheduler.timesteps)):
 
 display_img(sample)
 
+# model pipeline for aving and upload
+sky_diffuse_pipe = DDPMPipeline(unet=unet_model, scheduler=noise_scheduler)
+sky_diffuse_pipe.save_pretrained("sky_diff")
+
+
 # push model to hub
+model_name = "sky_diffuse"
+model_id = get_full_repo_name(model_name)
+
+notebook_login()
+create_repo(model_id)
+
+hf_api = HfApi()
+
+hf_api.upload_folder(
+    folder_path="sky_diff/scheduler", path_in_repo="", repo_id=model_id
+)
+hf_api.upload_folder(folder_path="sky_diff/unet", path_in_repo="", repo_id=model_id)
+hf_api.upload_file(
+    path_or_fileobj="sky_diff/model_index.json",
+    path_in_repo="model_index.json",
+    repo_id=model_id,
+)
+
+
+# readme
+
+content = f"""
+---
+license: apache 2.0
+tags:
+- pytorch
+- diffusers
+- unconditional-image-generation
+- diffusion-models-class
+---
+
+This model is a diffusion model for unconditional image generation of clouds, skies, etc
+
+## Usage
+
+```python
+from diffusers import DDPMPipeline
+
+pipeline = DDPMPipeline.from_pretrained('{model_id}')
+image = pipeline().images[0]
+image
+"""
