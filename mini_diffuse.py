@@ -1,16 +1,25 @@
 # minimal diffusion model for clouds, using huggingface diffusers. For my complete from-scratch implementation, check the the tiny_diffusion folder
 # implemented in pytorch
+
+from time import time
 import torchvision
-import numpy as np
 import torch
 from torch.nn import functional as fnn
 from torch.utils.data import DataLoader
 from torchvision import transforms
+
 from datasets import load_dataset
+from diffusers import DDPMPipeline
 from diffusers.schedulers.scheduling_ddpm import DDPMScheduler
 from diffusers.models.unets import UNet2DModel
+from diffusers.optimization import get_cosine_schedule_with_warmup
+from huggingface_hub import notebook_login, get_full_repo_name, HfApi
+
+import numpy as np
+import wandb
 from PIL import Image as pillow_image
 from matplotlib import pyplot as plt
+from tqdm.auto import tqdm
 
 # geeral variables
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -93,3 +102,60 @@ with torch.no_grad():
     pred = unet_model(noisy_sample, timesteps).sample
 
 print(pred.shape)
+
+# training loop
+optimizer = torch.optim.AdamW(unet_model.parameters(), lr=4e-4)
+
+losses = []
+epochs = 30
+wandb.login()
+wandb.run(project="tiny_diffuse", name="minidiffuse_sky1_64x64")
+# lr_scheduler = get_cosine_schedule_with_warmup()
+
+for epoch in tqdm(range(epochs)):
+    print(f"training epoch @ {epoch + 1}")
+    for step, batch in tqdm(enumerate(train_dataloader)):
+        images = batch["image"].to(device)
+        noise = torch.randn(images.shape).to(device)  # noise to add to the images
+        b = images.shape[0]
+
+        timesteps = torch.randint(
+            0, noise_scheduler.num_train_timesteps, (b,), device=images.device
+        ).long()  # random timestep
+        noisy_images = noise_scheduler.add_noise(
+            images, noise, timesteps
+        )  # add noise to images
+        noise_pred = unet_model(noisy_images, timesteps, return_dict=False)[
+            0
+        ]  # model prediction
+
+        # loss function
+        loss = fnn.mse_loss(noise_pred, noise)
+        loss.backward()
+        losses.append(loss.item())
+        wandb.log({"loss": loss})
+
+        # gradient update
+        optimizer.step()
+        optimizer.zero_grad()
+
+    epoch_loss = sum(losses[-len(train_dataloader) :]) / len(train_dataloader)
+    print(f"epoch @ {epoch + 1} => loss: {epoch_loss}")
+
+try:
+    torch.save(unet_model.state_dict(), "mini_diffuse.pt")
+except Exception as e:
+    print(f"error saving model {e}")
+
+# sample generation
+rd_sample = torch.randn(10, 3, image_size, image_size)
+
+for k, c in tqdm(enumerate(noise_scheduler.timesteps)):
+    with torch.no_grad():
+        residual = unet_model(sample, c).sample  # model prediction
+
+    sample = noise_scheduler.step(residual, c, sample).prev_sample
+
+display_img(sample)
+
+# push model to hub
