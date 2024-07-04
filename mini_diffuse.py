@@ -30,7 +30,7 @@ from tqdm.auto import tqdm
 # geeral variables
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 sky_image_data = load_dataset("tensorkelechi/sky_images")
-image_size = 64
+image_size = 128
 batch_size = 32
 
 # utility functions
@@ -72,7 +72,7 @@ sky_image_data.set_transform(image_transforms)
 train_dataloader = DataLoader(sky_image_data, batch_size=batch_size, shuffle=True)
 
 # for sample display of images/shape check
-sample = next(iter(train_dataloader))["image"].to(device)[:8]
+sample = next(iter(train_dataloader))["image"].to(device)[:5]
 display_img(sample).resize((8 * image_size, image_size), resample=pillow_image.NEAREST)
 
 # scheduler for noise addition
@@ -148,13 +148,15 @@ for epoch in tqdm(range(epochs)):
     epoch_loss = sum(losses[-len(train_dataloader) :]) / len(train_dataloader)
     print(f"epoch @ {epoch + 1} => loss: {epoch_loss}")
 
+# plot the losses
 fig, axs = plt.subplots(1, 2, figsize=(12, 4))
 axs[0].plot(losses)
 axs[1].plot(np.log(losses))
 plt.show()
 
+# save model as pt(better saved as pipeline)
 try:
-    torch.save(unet_model.state_dict(), "mini_diffuse.pt")
+    torch.save(unet_model.state_dict(), "mini_diffuse2.pt")
 except Exception as e:
     print(f"error saving model {e}")
 
@@ -172,7 +174,7 @@ display_img(sample)
 # model pipeline for aving and upload
 sky_diffuse_pipe = DDPMPipeline(unet=unet_model, scheduler=noise_scheduler)
 sky_diffuse_pipe.save_pretrained("sky_diff")
-
+sky_diffuse_pipe.push_to_hub("tensorkelechi/sky_diffuse")  # push pipeine directly
 
 # push model to hub
 model_name = "sky_diffuse"
@@ -180,7 +182,6 @@ model_id = get_full_repo_name(model_name)
 
 notebook_login()
 create_repo(model_id)
-
 
 hf_api = HfApi()
 hf_api.upload_folder(
@@ -214,7 +215,6 @@ pipeline = DDPMPipeline.from_pretrained('{model_id}')
 image = pipeline().images[0]
 image
 """
-
 
 card = ModelCard(content)
 card.push_to_hub(model_id)
