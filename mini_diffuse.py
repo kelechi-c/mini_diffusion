@@ -1,37 +1,56 @@
-# minimal diffusion model for clouds, using huggingface diffusers. For my complete from-scratch implementation, check the the tiny_diffusion folder
+# minimal diffusion model for clouds, using huggingface diffusers architecture rFor my complete from-scratch implementation, check the the tiny_diffusion folder
 # implemented in pytorch
-
 from time import time
 import torchvision
 import torch
 from torch.nn import functional as fnn
 from torch.utils.data import DataLoader
 from torchvision import transforms
-
-from datasets import load_dataset
-from diffusers import DDPMPipeline
-from diffusers.schedulers.scheduling_ddpm import DDPMScheduler
-from diffusers.models.unets import UNet2DModel
-from diffusers.optimization import get_cosine_schedule_with_warmup
-from huggingface_hub import (
-    notebook_login,
-    get_full_repo_name,
-    HfApi,
-    create_repo,
-    ModelCard,
-)
-
 import numpy as np
 import wandb
 from PIL import Image as pillow_image
 from matplotlib import pyplot as plt
 from tqdm.auto import tqdm
+from datasets import load_dataset
+from diffusers.pipelines.ddpm.pipeline_ddpm import DDPMPipeline
+from diffusers.schedulers.scheduling_ddpm import DDPMScheduler
+from diffusers.models.unets.unet_2d import UNet2DModel
+from diffusers.optimization import get_cosine_schedule_with_warmup
+from huggingface_hub import (
+    login,
+    get_full_repo_name,
+    HfApi,
+    create_repo,
+)
 
-# geeral variables
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-sky_image_data = load_dataset("tensorkelechi/sky_images")
-image_size = 128
-batch_size = 32
+# config
+
+
+class config:
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    image_size = 128
+    batch_size = 32
+
+
+paint_images = load_dataset("huggan/wikiart", split="train", streaming=True)
+paint_images = paint_images.take(100)
+
+
+image_pp = transforms.Compose(
+    [
+        transforms.Resize((config.image_size, config.image_size)),
+        transforms.RandomHorizontalFlip(),
+        transforms.ToTensor(),
+        transforms.Normalize([0.5], [0.5]),
+    ]
+)
+
+
+def image_transforms(data):
+    image_data = [image_pp(image.convert("RGB")) for image in data["image"]]
+
+    yield {"image": image_data}
+
 
 # utility functions
 
@@ -45,35 +64,23 @@ def display_img(img):
     return grid
 
 
-def image_grid(img_list: list, size=image_size):
+def image_grid(img_list: list, size=config.image_size):
     out_image = pillow_image.new("RGB", (size * len(img_list), size))
     for k, img in enumerate(img_list):
         out_image.paste(img.resize(size, size), (k * size, 0))
+
     return out_image
 
 
-image_pp = transforms.Compose(
-    [
-        transforms.Resize((image_size, image_size)),
-        transforms.RandomHorizontalFlip(),
-        transforms.ToTensor(),
-        transforms.Normalize([0.5], [0.5]),
-    ]
-)
-
-
-def image_transforms(data):
-    image_data = [image_pp(image.convert("RGB")) for image in data["image"]]
-
-    return {"image": image_data}
-
-
-sky_image_data.set_transform(image_transforms)
-train_dataloader = DataLoader(sky_image_data, batch_size=batch_size, shuffle=True)
+paint_images.map(image_transforms)
+train_dataloader = DataLoader(paint_images, batch_size=config.batch_size)
 
 # for sample display of images/shape check
-sample = next(iter(train_dataloader))["image"].to(device)[:5]
-display_img(sample).resize((8 * image_size, image_size), resample=pillow_image.NEAREST)
+sample = next(iter(train_dataloader))["image"].to(config.device)[:5]
+display_img(sample).resize(
+    (8 * config.image_size, config.image_size), resample=pillow_image.NEAREST
+)
+
 
 # scheduler for noise addition
 noise_scheduler = DDPMScheduler(
@@ -81,14 +88,15 @@ noise_scheduler = DDPMScheduler(
 )
 
 noise = torch.rand_like(sample)
-timesteps = torch.linspace(0, 999, 8).long().to(device)
-noisy_sample = noise_scheduler.add_noise(sample, noise, timesteps)
+timesteps = torch.linspace(0, 999, 8).long().to(config.device)
+noisy_sample = noise_scheduler.add_noise(sample, noise, timesteps.long())
 print(f"shape of noised sample=> {noisy_sample.shape}")
 print(f"shape of image sample=> {sample.shape}")
 
+
 # define the unet model for downsampleing and upsampling
 unet_model = UNet2DModel(
-    sample_size=image_size,
+    sample_size=config.image_size,
     in_channels=3,
     out_channels=3,
     layers_per_block=2,
@@ -102,7 +110,7 @@ unet_model = UNet2DModel(
     up_block_types=("AttnUpBlock2D", "AttnUpBlock2D", "UpBlock2D", "UpBlock2D"),
 )
 
-unet_model.to(device)
+unet_model.to(config.device)
 
 with torch.no_grad():
     pred = unet_model(noisy_sample, timesteps).sample
@@ -115,21 +123,23 @@ optimizer = torch.optim.AdamW(unet_model.parameters(), lr=4e-4)
 losses = []
 epochs = 30
 wandb.login()
-wandb.init(project="tiny_diffuse", name="minidiffuse_sky1_64x64")
+wandb.init(project="tiny_diffuse", name="minidiffuse_paint")
 # lr_scheduler = get_cosine_schedule_with_warmup()
 
 for epoch in tqdm(range(epochs)):
     print(f"training epoch @ {epoch + 1}")
     for step, batch in tqdm(enumerate(train_dataloader)):
-        images = batch["image"].to(device)
-        noise = torch.randn(images.shape).to(device)  # noise to add to the images
+        images = batch["image"].to(config.device)
+        noise = torch.randn(images.shape).to(
+            config.device
+        )  # noise to add to the images
         b = images.shape[0]
 
         timesteps = torch.randint(
             0, noise_scheduler.num_train_timesteps, (b,), device=images.device
         ).long()  # random timestep
         noisy_images = noise_scheduler.add_noise(
-            images, noise, timesteps
+            images, noise, timesteps.long()
         )  # add noise to images
         noise_pred = unet_model(noisy_images, timesteps, return_dict=False)[
             0
@@ -161,7 +171,7 @@ except Exception as e:
     print(f"error saving model {e}")
 
 # sample generation
-rd_sample = torch.randn(10, 3, image_size, image_size)
+rd_sample = torch.randn(10, 3, config.image_size, config.image_size)
 
 for k, c in tqdm(enumerate(noise_scheduler.timesteps)):
     with torch.no_grad():
@@ -171,50 +181,9 @@ for k, c in tqdm(enumerate(noise_scheduler.timesteps)):
 
 display_img(sample)
 
+login()
+
 # model pipeline for aving and upload
 sky_diffuse_pipe = DDPMPipeline(unet=unet_model, scheduler=noise_scheduler)
 sky_diffuse_pipe.save_pretrained("sky_diff")
-sky_diffuse_pipe.push_to_hub("tensorkelechi/sky_diffuse")  # push pipeine directly
-
-# push model to hub
-model_name = "sky_diffuse"
-model_id = get_full_repo_name(model_name)
-
-notebook_login()
-create_repo(model_id)
-
-hf_api = HfApi()
-hf_api.upload_folder(
-    folder_path="sky_diff/scheduler", path_in_repo="", repo_id=model_id
-)
-hf_api.upload_folder(folder_path="sky_diff/unet", path_in_repo="", repo_id=model_id)
-hf_api.upload_file(
-    path_or_fileobj="sky_diff/model_index.json",
-    path_in_repo="model_index.json",
-    repo_id=model_id,
-)
-
-
-# readme
-
-content = f"""
----
-license: apache 2.0
-tags:
-- pytorch
-- diffusers
-- unconditional-image-generation
-- diffusion-models-class
----
-
-This model is a diffusion model for unconditional image generation of clouds, skies, etc
-## Usage```python
-from diffusers import DDPMPipeline
-
-pipeline = DDPMPipeline.from_pretrained('{model_id}')
-image = pipeline().images[0]
-image
-"""
-
-card = ModelCard(content)
-card.push_to_hub(model_id)
+sky_diffuse_pipe.push_to_hub("tensorkelechi/sky_diffuse")  # push pipeline directly
