@@ -11,6 +11,7 @@ import wandb
 from PIL import Image as pillow_image
 from matplotlib import pyplot as plt
 from tqdm.auto import tqdm
+from einops import rearrange
 from datasets import load_dataset
 from diffusers.pipelines.ddpm.pipeline_ddpm import DDPMPipeline
 from diffusers.schedulers.scheduling_ddpm import DDPMScheduler
@@ -23,13 +24,13 @@ from huggingface_hub import (
     create_repo,
 )
 
+
 # config
-
-
 class config:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     image_size = 128
     batch_size = 32
+    data_id = "Artificio/WikiArt"
 
 
 paint_images = load_dataset("huggan/wikiart", split="train", streaming=True)
@@ -77,9 +78,7 @@ train_dataloader = DataLoader(paint_images, batch_size=config.batch_size)
 
 # for sample display of images/shape check
 sample = next(iter(train_dataloader))["image"].to(config.device)[:5]
-display_img(sample).resize(
-    (8 * config.image_size, config.image_size), resample=pillow_image.NEAREST
-)
+display_img(sample.permute(0, 3, 1, 2))
 
 
 # scheduler for noise addition
@@ -88,8 +87,9 @@ noise_scheduler = DDPMScheduler(
 )
 
 noise = torch.rand_like(sample)
-timesteps = torch.linspace(0, 999, 8).long().to(config.device)
+timesteps = torch.linspace(0, 999, config.batch_size).long().to(config.device)
 noisy_sample = noise_scheduler.add_noise(sample, noise, timesteps.long())
+
 print(f"shape of noised sample=> {noisy_sample.shape}")
 print(f"shape of image sample=> {sample.shape}")
 
@@ -107,12 +107,14 @@ unet_model = UNet2DModel(
         "AttnDownBlock2D",
         "AttnDownBlock2D",
     ),
-    up_block_types=("AttnUpBlock2D", "AttnUpBlock2D", "UpBlock2D", "UpBlock2D"),
+    up_block_types=("AttnUpBlock2D", "AttnUpBlock2D",
+                    "UpBlock2D", "UpBlock2D"),
 )
 
-unet_model.to(config.device)
+unet_model = unet_model.to(config.device)
 
 with torch.no_grad():
+    noisy_sample = rearrange(noisy_sample, "b h w c -> b c h w")
     pred = unet_model(noisy_sample, timesteps).sample
 
 print(pred.shape)
@@ -122,14 +124,17 @@ optimizer = torch.optim.AdamW(unet_model.parameters(), lr=4e-4)
 
 losses = []
 epochs = 30
+
+# wandb init
 wandb.login()
 wandb.init(project="tiny_diffuse", name="minidiffuse_paint")
 # lr_scheduler = get_cosine_schedule_with_warmup()
 
 for epoch in tqdm(range(epochs)):
     print(f"training epoch @ {epoch + 1}")
-    for step, batch in tqdm(enumerate(train_dataloader)):
-        images = batch["image"].to(config.device)
+    for step, image in tqdm(enumerate(train_dataloader)):
+        image = rearrange(image, "b h w c -> b c h w")
+        images = image.to(config.device)
         noise = torch.randn(images.shape).to(
             config.device
         )  # noise to add to the images
@@ -155,7 +160,7 @@ for epoch in tqdm(range(epochs)):
         optimizer.step()
         optimizer.zero_grad()
 
-    epoch_loss = sum(losses[-len(train_dataloader) :]) / len(train_dataloader)
+    epoch_loss = sum(losses[-len(train_dataloader):]) / len(train_dataloader)
     print(f"epoch @ {epoch + 1} => loss: {epoch_loss}")
 
 # plot the losses
@@ -186,4 +191,5 @@ login()
 # model pipeline for aving and upload
 sky_diffuse_pipe = DDPMPipeline(unet=unet_model, scheduler=noise_scheduler)
 sky_diffuse_pipe.save_pretrained("sky_diff")
-sky_diffuse_pipe.push_to_hub("tensorkelechi/sky_diffuse")  # push pipeline directly
+sky_diffuse_pipe.push_to_hub(
+    "tensorkelechi/sky_diffuse")  # push pipeline directly
