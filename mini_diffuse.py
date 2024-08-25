@@ -176,15 +176,18 @@ except Exception as e:
     print(f"error saving model {e}")
 
 # sample generation
-rd_sample = torch.randn(10, 3, config.image_size, config.image_size)
+rd_sample = torch.randn(5, 3, config.image_size,
+                        config.image_size).to(config.device)
+print(rd_sample.shape)
 
 for k, c in tqdm(enumerate(noise_scheduler.timesteps)):
     with torch.no_grad():
-        residual = unet_model(sample, c).sample  # model prediction
+        residual = unet_model(rd_sample, c).sample  # model prediction
 
-    sample = noise_scheduler.step(residual, c, sample).prev_sample
+    rd_sample = noise_scheduler.step(residual, c, rd_sample).prev_sample
 
-display_img(sample)
+display_img(rd_sample)  # show generated samples
+
 
 login()
 
