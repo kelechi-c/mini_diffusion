@@ -8,9 +8,8 @@ import cv2
 from torch.nn import functional as fnn
 from torch.utils.data import DataLoader, IterableDataset
 from datasets import load_dataset
-from diffusers import DDPMPipeline
 from diffusers.schedulers.scheduling_ddpm import DDPMScheduler
-from diffusers.models.unets import UNet2DModel
+from diffusers.models.unets.unet_2d import UNet2DModel
 from PIL import Image as pillow_image
 from tqdm.auto import tqdm
 from einops import rearrange
@@ -20,7 +19,7 @@ from einops import rearrange
 import torch_xla as xla
 import torch_xla.core.xla_model as xm
 
-device = xla.device()
+device = xla.device()  # or xm.xla_device()
 
 print(xla.devices())
 print(device)
@@ -28,7 +27,7 @@ print(device)
 
 # general variables
 huggan_data = "huggan/wikiart"
-split = 1000
+split = 11000
 image_size = 128
 batch_size = 32
 
@@ -37,6 +36,8 @@ paint_images = paint_images.take(split)
 
 
 # utility functions
+
+
 def read_image(img, img_size=128):
     img = np.array(img)
     img = cv2.resize(img, (img_size, img_size))
@@ -53,13 +54,6 @@ def display_img(img):
     grid = pillow_image.fromarray(np.array(grid).astype(np.uint8))
 
     return grid
-
-
-def image_grid(img_list: list, size=image_size):
-    out_image = pillow_image.new("RGB", (size * len(img_list), size))
-    for k, img in enumerate(img_list):
-        out_image.paste(img.resize(size, size), (k * size, 0))
-    return out_image
 
 
 class ImageDataset(IterableDataset):
@@ -116,8 +110,7 @@ unet_model = UNet2DModel(
         "AttnDownBlock2D",
         "AttnDownBlock2D",
     ),
-    up_block_types=("AttnUpBlock2D", "AttnUpBlock2D",
-                    "UpBlock2D", "UpBlock2D"),
+    up_block_types=("AttnUpBlock2D", "AttnUpBlock2D", "UpBlock2D", "UpBlock2D"),
 )
 
 unet_model = unet_model.to(device)
@@ -152,7 +145,7 @@ def _trainer():
                     0, noise_scheduler.num_train_timesteps, (b,), device=device
                 ).long()  # random timestep
                 noisy_images = noise_scheduler.add_noise(
-                    images, noise, timesteps
+                    images, noise, timesteps.int()
                 )  # add noise to images
                 noise_pred = unet_model(noisy_images, timesteps, return_dict=False)[
                     0
@@ -193,15 +186,9 @@ for k, c in tqdm(enumerate(noise_scheduler.timesteps)):
     with torch.no_grad():
         residual = unet_model(rd_sample, c).sample  # model prediction
 
-    rd_sample = noise_scheduler.step(residual, c, rd_sample).prev_sample
+    rd_sample = noise_scheduler.step(residual, c, rd_sample).prev_sample  # type: ignore
 
 display_img(rd_sample)
 
 # model pipeline for aving and upload
-sky_diffuse_pipe = DDPMPipeline(
-    unet=unet_model, scheduler=noise_scheduler
-)  # .to(device)
-sky_diffuse_pipe.save_pretrained("sky_diff")
-
-
 print("training complete")
