@@ -1,5 +1,4 @@
 # UNet for the diffusion model
-
 import torch
 from torch import nn
 
@@ -11,4 +10,8 @@ class Unet(nn.Module):
             nn.Conv2d(3, 64, kernel_size=3, stride=2),
             nn.Conv2d(64, 64, kernel_size=3, stride=2),
             nn.ReLU(),
+            nn.MaxPool2d(2),
         )
+
+    def forward(self, x: torch.Tensor):
+        return x

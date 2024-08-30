@@ -79,7 +79,10 @@ class VaeDecoder(nn.Module):
         )
 
     def forward(self, x: torch.Tensor, noise):
-        return x * 0.18215
+        x = x / 0.18215
+        x = self.decoder_layers(x)
+
+        return x
 
 
 class Vae(nn.Module):
@@ -93,3 +96,6 @@ class Vae(nn.Module):
 
     def decoder(self, image: torch.Tensor) -> torch.Tensor:
         return self.decoder(image)
+
+    def forward(self, x: torch.Tensor):
+        return x
