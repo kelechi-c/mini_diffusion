@@ -50,8 +50,38 @@ class SelfAttention(nn.Module):
 
 
 class CrossAttention(nn.Module):
-    def __init__(self, n_heads):
+    def __init__(self, embed_dim, cross_dim, n_heads):
         self.n_heads = n_heads
+        self.head_dim = embed_dim // n_heads  # split the dimension among the heads
 
-    def forward(self, x: torch.Tensor):
-        return x
+        # input linear projection
+        self.q_project = nn.Linear(embed_dim, embed_dim, bias=True)
+        self.k_project = nn.Linear(cross_dim, embed_dim, bias=True)
+        self.v_project = nn.Linear(cross_dim, embed_dim, bias=True)
+
+    def forward(
+        self, x_input: torch.Tensor, y_target: torch.Tensor, causal_mask: bool = True
+    ):
+        batch_size, seq_len, embed_dim = x_input.shape
+
+        q = self.q_project(x_input)  # q -> latent
+        k = self.k_project(y_target)  # key -> context, text, mapping
+        v = self.v_project(y_target)  # context value matrices
+
+        # reshape/unfold tensors
+        q = rearrange(q, "b l (h d) -> b h l d")
+        k = rearrange(k, "b l (h d) -> b h l d")
+        v = rearrange(v, "b l (h d) -> b h l d")
+
+        attn_weight = q @ k.transpose(-1, -2)  # attention matmul
+
+        # divide by head dim, d from the attention equation
+        attn_weight /= math.sqrt(self.head_dim)
+        attn_score = func_nn.softmax(attn_weight, dim=1)
+
+        output = attn_score @ v  # multiply with value matrix
+        # shape -> (batch_size, sequence_length, dimension)
+        output = rearrange(output, "b h l d -> b l (h d)")
+        output = self.out_project(output)  # output linear projection
+
+        return output
