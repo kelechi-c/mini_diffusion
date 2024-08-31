@@ -1,3 +1,7 @@
+#### thoughtful/focused practice with goals in mind is the key to getting better.
+
+### sample maths explanation
+
 The above equation represents a conditional probability distribution function, specifically a Gaussian distribution. It is used in the context of Hidden Markov Models (HMMs) and Kalman filters.
 
 In this context, x_t and x_t-1 represent the state variables at time t and t-1, respectively. The function p(x_t-1 | x_t) represents the probability of being in state x_t-1 at time t-1, given that the system is in state x_t at time t.

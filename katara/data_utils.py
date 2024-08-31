@@ -6,7 +6,7 @@ import cv2
 import os
 import shutil
 import requests
-from datasets import load_dataset
+from datasets import Dataset, load_dataset
 from torch.utils.data import IterableDataset
 
 
@@ -27,20 +27,21 @@ def read_image(img_url, img_size=512):
     return img
 
 
-dataset_id = "CortexLM/midjourney-v6"
+# load LAION art dataset
+dataset_id = "laion/laion-art"  # "CortexLM/midjourney-v6"
 hfdata = load_dataset(dataset_id, split="train", streaming=True)
-hfdata = hfdata.take(100000)
+hfdata = hfdata.take(100_000)
 
 
 class ImageDataset(IterableDataset):
-    def __init__(self, dataset=hfdata):
+    def __init__(self, dataset: Dataset = hfdata):
         super().__init__()
         self.dataset = dataset
 
     def __iter__(self):
         for item in self.dataset:
-            image = read_image(item["image_url"])
-            caption = item["prompt"]
+            image = read_image(item["URL"])
+            caption = item["TEXT"]
 
             image = torch.tensor(image, dtype=config.dtype)
             caption = torch.tensor(caption, dtype=config.dtype)
