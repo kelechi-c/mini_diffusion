@@ -1,5 +1,6 @@
 # Dataloader and image utils
 import torch
+import torch_xla as xla
 from skimage import io
 import numpy as np
 import cv2
@@ -16,6 +17,11 @@ class config:
     img_size = 224
     latent_dim = 32
     text_token_len = 77
+    embed_dim = 768
+    vocab_size = 49408
+    quick_gelu_var = 1.702
+    tpu_device = xla.device()
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 def read_image(img_url, img_size=512):
