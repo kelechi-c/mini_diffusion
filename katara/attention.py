@@ -7,6 +7,7 @@ from einops import rearrange
 
 class SelfAttention(nn.Module):
     def __init__(self, n_heads, embed_dim):
+        super().__init__()
         self.n_heads = n_heads  # self-attention attention heads
         self.head_dim = embed_dim // n_heads  # split the dimension among the heads
 
@@ -51,6 +52,7 @@ class SelfAttention(nn.Module):
 
 class CrossAttention(nn.Module):
     def __init__(self, embed_dim, cross_dim, n_heads):
+        super().__init__()
         self.n_heads = n_heads
         self.head_dim = embed_dim // n_heads  # split the dimension among the heads
 

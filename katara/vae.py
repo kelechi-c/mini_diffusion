@@ -31,6 +31,7 @@ class VaeBlock(nn.Module):
 
 class VaeEncoder(nn.Module):
     def __init__(self):
+        super().__init__()
         self.encoder_layers = nn.Sequential(
             nn.Conv2d(3, 128, kernel_size=3, stride=1),
             VaeBlock(128, 128),
@@ -63,6 +64,7 @@ class VaeEncoder(nn.Module):
 
 class VaeDecoder(nn.Module):
     def __init__(self):
+        super().__init__()
         self.decoder_layers = nn.Sequential(
             nn.Conv2d(4, 4, kernel_size=3, padding=1),
             nn.Conv2d(4, 512, kernel_size=3, padding=1),  # height / 8
@@ -108,6 +110,3 @@ class Vae(nn.Module):
 
     def decoder(self, image: torch.Tensor) -> torch.Tensor:
         return self.decoder(image)
-
-    def forward(self, x: torch.Tensor):
-        return x
