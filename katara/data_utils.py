@@ -6,9 +6,12 @@ import numpy as np
 import cv2
 import os
 import shutil
+import random
 import requests
 from datasets import Dataset, load_dataset
 from torch.utils.data import IterableDataset
+from PIL import Image
+from IPython import display as ipd
 
 
 class config:
@@ -16,6 +19,8 @@ class config:
     dtype = torch.float16
     img_size = 224
     latent_dim = 32
+    attn_heads = 12
+    learn_rate = 1e-4
     text_token_len = 77
     embed_dim = 768
     vocab_size = 49408
@@ -65,3 +70,9 @@ def download(link, filename):  # fetch content from url
         shutil.copyfileobj(file_res.raw, file_writer)
 
     return image_file
+
+
+def seed_everything(seed=333):
+    torch.manual_seed(seed)
+    np.random.seed(seed)
+    random.seed(seed)
