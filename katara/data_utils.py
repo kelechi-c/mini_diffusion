@@ -9,13 +9,11 @@ import shutil
 import random
 import requests
 from datasets import Dataset, load_dataset
-from torch.utils.data import IterableDataset
-from PIL import Image
-from IPython import display as ipd
+from torch.utils.data import IterableDataset, DataLoader
 
 
 class config:
-    batch_size = 32
+    batch_size = 8
     dtype = torch.float16
     img_size = 224
     latent_dim = 32
@@ -30,7 +28,7 @@ class config:
 
 
 def read_image(img_url, img_size=512):
-    img = io.imread(img_url) if isinstance(str, img_url) else np.array(img_url)
+    img = io.imread(img_url) if isinstance(img_url, str) else np.array(img_url)
     img = cv2.resize(img, (img_size, img_size))
     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     img = img / 255.0
@@ -58,6 +56,10 @@ class ImageDataset(IterableDataset):
             caption = torch.tensor(caption, dtype=config.dtype)
 
             yield image, caption
+
+
+dataset = ImageDataset()
+train_loader = DataLoader(dataset, batch_size=config.batch_size)
 
 
 def download(link, filename):  # fetch content from url
